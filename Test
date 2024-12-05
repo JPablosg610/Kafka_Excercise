@@ -1,36 +1,46 @@
-def processing_market_data(symbol="BTCUSDT", interval="1m"):
+def transformations(data, smooth_interval=3, smooth_exp=0.3):
     """
-    Procesa los datos de mercado:
-    - Obtiene los datos desde la API.
-    - Limpia los datos utilizando clean_market_data.
-    - Devuelve los datos listos para su uso.
+    Aplica transformaciones adicionales a los datos de mercado:
+    - Calcula promedios móviles simples (SMA) y exponenciales (EMA).
+    - Realiza operaciones adicionales según sea necesario.
 
     Args:
-        symbol (str): Símbolo del par de mercado (e.g., BTCUSDT).
-        interval (str): Intervalo de tiempo para los datos (e.g., 1m, 5m, 1h).
+        data (pd.DataFrame): Datos procesados como DataFrame.
+        smooth_interval (int): Ventana para el cálculo del promedio móvil simple.
+        smooth_exp (float): Factor de suavizado para el promedio móvil exponencial.
 
     Returns:
-        pd.DataFrame: Datos procesados y limpios como DataFrame.
+        pd.DataFrame: Datos transformados con nuevas columnas.
     """
     try:
-        # Obtener datos de la API
-        raw_data = get_market_data(symbol=symbol, interval=interval)
-        if not raw_data:
-            raise ValueError("No se pudieron obtener datos de la API.")
+        # Asegurarse de que las columnas necesarias están presentes
+        if "close" not in data.columns:
+            raise ValueError("La columna 'close' es necesaria para las transformaciones.")
 
-        # Limpiar los datos
-        processed_data = clean_market_data(raw_data)
-        if processed_data is None:
-            raise ValueError("Error al limpiar los datos.")
+        # Calcular promedio móvil simple (SMA)
+        data["SMA"] = data["close"].rolling(window=smooth_interval).mean()
 
-        print("Datos procesados correctamente.")
-        return processed_data
+        # Calcular promedio móvil exponencial (EMA)
+        data["EMA"] = data["close"].ewm(span=smooth_interval, adjust=False).mean()
+
+        print("Transformaciones aplicadas correctamente.")
+        return data
 
     except Exception as e:
-        print(f"Error al procesar los datos de mercado: {e}")
+        print(f"Error al aplicar transformaciones: {e}")
         return None
 
 # Prueba de la función
-processed_data = processing_market_data()
-if processed_data is not None:
-    print(processed_data)
+import pandas as pd
+
+# Datos simulados para prueba
+data = pd.DataFrame({
+    "symbol": ["BTCUSDT"] * 5,
+    "close": [27345.67, 27350.55, 27360.1, 27340.0, 27370.0],
+    "timestamp": pd.date_range(start="2023-03-21", periods=5, freq="T")
+})
+
+# Aplicar transformaciones
+transformed_data = transformations(data)
+if transformed_data is not None:
+    print(transformed_data)
