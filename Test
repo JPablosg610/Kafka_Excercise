@@ -1,34 +1,52 @@
-from kafka import KafkaProducer
-from json import dumps
+import requests
+import time
 
-def create_producer(bootstrap_servers="localhost:9092"):
+def get_market_data(symbol="BTCUSDT", interval="1m"):
     """
-    Crea un productor Kafka para enviar mensajes a un tópico.
+    Obtiene datos de mercado reales desde la API de Binance.
 
     Args:
-        bootstrap_servers (str): Dirección del servidor Kafka.
+        symbol (str): Símbolo del par de mercado (e.g., BTCUSDT).
+        interval (str): Intervalo de tiempo para los datos (e.g., 1m, 5m, 1h).
 
     Returns:
-        KafkaProducer: Productor configurado.
+        dict: Datos de mercado reales.
     """
-    try:
-        # Crear el productor Kafka
-        producer = KafkaProducer(
-            bootstrap_servers=bootstrap_servers,  # Dirección del broker Kafka
-            value_serializer=lambda v: dumps(v).encode('utf-8')  # Serializar mensajes a JSON
-        )
-        print(f"Conexión exitosa al servidor Kafka: {bootstrap_servers}")
-        return producer
+    url = f"https://api.binance.com/api/v3/klines"
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": 1  # Solo queremos el último dato
+    }
 
-    except Exception as e:
-        print(f"Error al crear el productor Kafka: {e}")
+    try:
+        # Realizar la solicitud a la API
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # Lanza una excepción para códigos de estado no exitosos
+
+        # Procesar los datos de la respuesta
+        kline = response.json()[0]  # Tomar el último registro
+        market_data = {
+            "symbol": symbol,
+            "open": float(kline[1]),
+            "high": float(kline[2]),
+            "low": float(kline[3]),
+            "close": float(kline[4]),
+            "volume": float(kline[5]),
+            "timestamp": int(kline[6]) / 1000  # Convertir de milisegundos a segundos
+        }
+
+        return market_data
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error al obtener datos de la API: {e}")
         return None
 
 # Prueba de la función
-producer = create_producer()
-
-if producer:
-    print("El productor Kafka está listo para enviar mensajes.")
+market_data = get_market_data()
+if market_data:
+    print("Datos de mercado reales obtenidos:")
+    print(market_data)
 else:
-    print("Hubo un problema al conectar con Kafka.")
+    print("No se pudieron obtener datos de la API.")
 
