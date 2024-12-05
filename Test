@@ -1,176 +1,72 @@
-from kafka import KafkaProducer
-from json import dumps
-import requests
-import pandas as pd
-import random
+import json
+from producer_functions import (
+    create_producer,
+    processing_market_data,
+    transformations
+)
+from sqlalchemy import create_engine
 import time
 
-
-# ============================
-# Función: Crear Productor Kafka
-# ============================
-def create_producer(bootstrap_servers="localhost:9092"):
+def main_flow(interval=1, symbol="BTCUSDT", db_config=None, table_name="market_data"):
     """
-    Crea un productor Kafka para enviar mensajes a un tópico.
+    Flujo principal para obtener datos de mercado, procesarlos, transformarlos,
+    y almacenarlos en la base de datos.
 
     Args:
-        bootstrap_servers (str): Dirección del servidor Kafka.
-
-    Returns:
-        KafkaProducer: Productor configurado.
+        interval (int): Intervalo de tiempo (en segundos) entre cada solicitud a la API.
+        symbol (str): Símbolo del par de mercado (e.g., BTCUSDT).
+        db_config (dict): Configuración de la base de datos (usuario, contraseña, host, db).
+        table_name (str): Nombre de la tabla en la base de datos.
     """
     try:
-        producer = KafkaProducer(
-            bootstrap_servers=bootstrap_servers,
-            value_serializer=lambda v: dumps(v).encode('utf-8')  # Serializar mensajes a JSON
+        # Crear conexión a la base de datos
+        if not db_config:
+            raise ValueError("La configuración de la base de datos es requerida.")
+
+        engine = create_engine(
+            f"postgresql://{db_config['user']}:{db_config['password']}@"
+            f"{db_config['host']}/{db_config['db']}"
         )
-        print(f"Conexión exitosa al servidor Kafka: {bootstrap_servers}")
-        return producer
 
+        print("Conexión a la base de datos establecida.")
+
+        # Flujo principal
+        while True:
+            # Obtener y procesar datos de mercado
+            processed_data = processing_market_data(symbol=symbol)
+            if processed_data is None:
+                print("No se obtuvieron datos válidos. Intentando nuevamente...")
+                time.sleep(interval)
+                continue
+
+            # Aplicar transformaciones adicionales
+            transformed_data = transformations(processed_data)
+            if transformed_data is None:
+                print("Error al transformar los datos. Intentando nuevamente...")
+                time.sleep(interval)
+                continue
+
+            # Guardar los datos en la base de datos
+            try:
+                transformed_data.to_sql(table_name, con=engine, if_exists="append", index=False)
+                print(f"Datos almacenados en la tabla '{table_name}':")
+                print(transformed_data)
+            except Exception as db_error:
+                print(f"Error al guardar los datos en la base de datos: {db_error}")
+
+            # Esperar el intervalo antes de la próxima iteración
+            time.sleep(interval)
+
+    except KeyboardInterrupt:
+        print("\nFlujo detenido manualmente.")
     except Exception as e:
-        print(f"Error al crear el productor Kafka: {e}")
-        return None
+        print(f"Error en el flujo principal: {e}")
 
 
-# ============================
-# Función: Obtener Datos de Mercado (API Real)
-# ============================
-def get_market_data(symbol="BTCUSDT", interval="1m"):
-    """
-    Obtiene datos de mercado reales desde la API de Binance.
+if __name__ == "__main__":
+    # Cargar configuración de la base de datos
+    with open("db_credentials.json") as f:
+        db_config = json.load(f)
 
-    Args:
-        symbol (str): Símbolo del par de mercado (e.g., BTCUSDT).
-        interval (str): Intervalo de tiempo para los datos (e.g., 1m, 5m, 1h).
-
-    Returns:
-        dict: Datos de mercado reales.
-    """
-    url = f"https://api.binance.com/api/v3/klines"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": 1  # Solo queremos el último dato
-    }
-
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-
-        kline = response.json()[0]
-        market_data = {
-            "symbol": symbol,
-            "open": float(kline[1]),
-            "high": float(kline[2]),
-            "low": float(kline[3]),
-            "close": float(kline[4]),
-            "volume": float(kline[5]),
-            "timestamp": int(kline[6]) / 1000  # Convertir de milisegundos a segundos
-        }
-
-        return market_data
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error al obtener datos de la API: {e}")
-        return None
-
-
-# ============================
-# Función: Limpiar Datos
-# ============================
-def clean_market_data(data):
-    """
-    Limpia y transforma los datos de mercado obtenidos desde la API.
-
-    Args:
-        data (dict): Datos de mercado obtenidos desde la API.
-
-    Returns:
-        pd.DataFrame: Datos limpios como un DataFrame de Pandas.
-    """
-    try:
-        df = pd.DataFrame([data])
-
-        # Verificar que las columnas necesarias están presentes
-        required_columns = ["symbol", "open", "high", "low", "close", "volume", "timestamp"]
-        for col in required_columns:
-            if col not in df.columns:
-                raise ValueError(f"Falta la columna requerida: {col}")
-
-        # Convertir timestamp a formato legible
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
-
-        # Validar que los valores numéricos no sean nulos o negativos
-        numeric_columns = ["open", "high", "low", "close", "volume"]
-        for col in numeric_columns:
-            if (df[col] <= 0).any():
-                raise ValueError(f"Los valores de '{col}' no pueden ser negativos o cero.")
-
-        return df
-
-    except Exception as e:
-        print(f"Error al limpiar los datos: {e}")
-        return None
-
-
-# ============================
-# Función: Procesar Datos de Mercado
-# ============================
-def processing_market_data(symbol="BTCUSDT", interval="1m"):
-    """
-    Procesa los datos de mercado:
-    - Obtiene los datos desde la API.
-    - Limpia los datos utilizando clean_market_data.
-    - Devuelve los datos listos para su uso.
-
-    Args:
-        symbol (str): Símbolo del par de mercado (e.g., BTCUSDT).
-        interval (str): Intervalo de tiempo para los datos (e.g., 1m, 5m, 1h).
-
-    Returns:
-        pd.DataFrame: Datos procesados y limpios como DataFrame.
-    """
-    try:
-        raw_data = get_market_data(symbol=symbol, interval=interval)
-        if not raw_data:
-            raise ValueError("No se pudieron obtener datos de la API.")
-
-        processed_data = clean_market_data(raw_data)
-        if processed_data is None:
-            raise ValueError("Error al limpiar los datos.")
-
-        return processed_data
-
-    except Exception as e:
-        print(f"Error al procesar los datos de mercado: {e}")
-        return None
-
-
-# ============================
-# Función: Transformar Datos
-# ============================
-def transformations(data, smooth_interval=3, smooth_exp=0.3):
-    """
-    Aplica transformaciones adicionales a los datos de mercado:
-    - Calcula promedios móviles simples (SMA) y exponenciales (EMA).
-
-    Args:
-        data (pd.DataFrame): Datos procesados como DataFrame.
-        smooth_interval (int): Ventana para el cálculo del promedio móvil simple.
-        smooth_exp (float): Factor de suavizado para el promedio móvil exponencial.
-
-    Returns:
-        pd.DataFrame: Datos transformados con nuevas columnas.
-    """
-    try:
-        if "close" not in data.columns:
-            raise ValueError("La columna 'close' es necesaria para las transformaciones.")
-
-        data["SMA"] = data["close"].rolling(window=smooth_interval).mean()
-        data["EMA"] = data["close"].ewm(span=smooth_interval, adjust=False).mean()
-
-        return data
-
-    except Exception as e:
-        print(f"Error al aplicar transformaciones: {e}")
-        return None
+    # Ejecutar flujo con un intervalo de 5 segundos
+    main_flow(interval=5, symbol="BTCUSDT", db_config=db_config, table_name="market_data")
