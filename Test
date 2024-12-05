@@ -1,53 +1,34 @@
-import pandas as pd
-from sqlalchemy import create_engine
+from kafka import KafkaProducer
+from json import dumps
 
-# Ejemplo de configuración de la base de datos
-user = "postgres"
-password = "tu_contraseña"
-host = "localhost"
-db = "crypto_db"
-table_name = "market_data"
-
-# Crear el motor de conexión a la base de datos
-engine = create_engine(f"postgresql://{user}:{password}@{host}/{db}")
-
-# DataFrame de prueba (simulando un mensaje procesado)
-data = {
-    "key": ["BTCUSDT"],
-    "price": [50000.25],
-    "volume": [1.2345],
-    "timestamp": [pd.Timestamp.now()]
-}
-df = pd.DataFrame(data)
-
-# Prueba de almacenamiento en la base de datos
-try:
-    # Guardar el DataFrame en la tabla especificada
-    df.to_sql(table_name, con=engine, if_exists="append", index=False)
-    print(f"Datos guardados exitosamente en la tabla '{table_name}'.")
-except Exception as e:
-    print(f"Error al guardar los datos: {e}")
-
-
-
-
-def db_materialization(table_name, engine, json_df):
+def create_producer(bootstrap_servers="localhost:9092"):
     """
-    Almacena los datos procesados en la base de datos.
+    Crea un productor Kafka para enviar mensajes a un tópico.
 
     Args:
-        table_name (str): Nombre de la tabla en la base de datos.
-        engine: Objeto de conexión SQLAlchemy.
-        json_df (pd.DataFrame): DataFrame con los datos procesados.
+        bootstrap_servers (str): Dirección del servidor Kafka.
 
     Returns:
-        bool: True si se guardaron los datos correctamente, False si hubo un error.
+        KafkaProducer: Productor configurado.
     """
     try:
-        # Guardar los datos en la tabla
-        json_df.to_sql(table_name, con=engine, if_exists="append", index=False)
-        print(f"Datos guardados exitosamente en la tabla '{table_name}'.")
-        return True
+        # Crear el productor Kafka
+        producer = KafkaProducer(
+            bootstrap_servers=bootstrap_servers,  # Dirección del broker Kafka
+            value_serializer=lambda v: dumps(v).encode('utf-8')  # Serializar mensajes a JSON
+        )
+        print(f"Conexión exitosa al servidor Kafka: {bootstrap_servers}")
+        return producer
+
     except Exception as e:
-        print(f"Error al guardar los datos en la tabla '{table_name}': {e}")
-        return False
+        print(f"Error al crear el productor Kafka: {e}")
+        return None
+
+# Prueba de la función
+producer = create_producer()
+
+if producer:
+    print("El productor Kafka está listo para enviar mensajes.")
+else:
+    print("Hubo un problema al conectar con Kafka.")
+
