@@ -1,74 +1,36 @@
-import json
-import time
-import threading
-from sqlalchemy import create_engine
-from producer_functions import (
-    create_producer,
-    get_market_data,
-    clean_market_data,
-    transformations
-)
-from consumer_functions import (
-    consumer,
-    handling_message,
-    db_materialization,
-    db_engine
-)
-
-# ============================
-# Flujo del Producer
-# ============================
 def producer_flow(interval=1, symbol="BTCUSDT", topic="market_data", db_config=None, table_name="market_data"):
-    """
-    Flujo para obtener, limpiar, procesar y enviar datos al tópico Kafka, y almacenarlos en la base de datos.
-    """
     try:
-        if not db_config:
-            raise ValueError("La configuración de la base de datos es requerida.")
-
-        # Crear conexión a la base de datos
-        engine = db_engine(
-            user=db_config['user'],
-            password=db_config['password'],
-            host=db_config['host'],
-            db=db_config['db']
-        )
-        if engine is None:
-            raise ValueError("No se pudo establecer la conexión con la base de datos.")
+        engine = db_engine(credentials_path="db_credentials.json")
         print("Conexión a la base de datos establecida para el productor.")
 
-        # Crear productor Kafka
         producer = create_producer()
         if not producer:
             raise ValueError("No se pudo conectar al productor Kafka.")
 
         while True:
-            # Obtener datos crudos desde la API
             raw_data = get_market_data(symbol=symbol)
             if not raw_data:
                 print("No se obtuvieron datos crudos. Intentando nuevamente...")
                 time.sleep(interval)
                 continue
 
-            # Limpiar y procesar los datos
             clean_data = clean_market_data(raw_data)
             if clean_data is None:
                 print("Error al limpiar los datos. Intentando nuevamente...")
                 time.sleep(interval)
                 continue
 
-            transformed_data = transformations(clean_data)
+            # Pasa los valores requeridos a transformations
+            transformed_data = transformations(clean_data, smooth_interval=3, smooth_exp=0.3)
             if transformed_data is None:
                 print("Error al transformar los datos. Intentando nuevamente...")
                 time.sleep(interval)
                 continue
 
-            # Enviar datos al tópico Kafka
             message = transformed_data.to_dict(orient="records")[0]
             producer.send(topic, value=message)
             print(f"Mensaje enviado al tópico '{topic}': {message}")
 
-            # Guardar datos en la base de datos
             try:
                 transformed_data.to_sql(table_name, con=engine, if_exists="append", index=False)
                 print(f"Datos almacenados en la tabla '{table_name}':")
@@ -76,78 +38,9 @@ def producer_flow(interval=1, symbol="BTCUSDT", topic="market_data", db_config=N
             except Exception as db_error:
                 print(f"Error al guardar los datos en la base de datos: {db_error}")
 
-            # Esperar antes de la próxima iteración
             time.sleep(interval)
 
     except KeyboardInterrupt:
         print("\nProductor detenido manualmente.")
     except Exception as e:
         print(f"Error en el flujo del productor: {e}")
-
-
-# ============================
-# Flujo del Consumer
-# ============================
-def consumer_flow(topic="market_data", db_config=None, table_name="consumer_data"):
-    """
-    Flujo para recibir datos desde el tópico Kafka y almacenarlos en la base de datos.
-    """
-    try:
-        if not db_config:
-            raise ValueError("La configuración de la base de datos es requerida.")
-
-        # Crear conexión a la base de datos
-        engine = db_engine(
-            user=db_config['user'],
-            password=db_config['password'],
-            host=db_config['host'],
-            db=db_config['db']
-        )
-        if engine is None:
-            raise ValueError("No se pudo establecer la conexión con la base de datos.")
-        print("Conexión a la base de datos establecida para el consumidor.")
-
-        # Crear consumidor Kafka
-        kafka_consumer = consumer(topic=topic)
-        if not kafka_consumer:
-            raise ValueError("No se pudo conectar al consumidor Kafka.")
-
-        for message in kafka_consumer:
-            print(f"Mensaje recibido del tópico '{topic}': {message.value}")
-
-            # Manejar el mensaje y convertirlo a DataFrame
-            handled_data = handling_message(message)
-            if handled_data is not None:
-                db_materialization(table_name, engine, handled_data)
-
-    except KeyboardInterrupt:
-        print("\nConsumidor detenido manualmente.")
-    except Exception as e:
-        print(f"Error en el flujo del consumidor: {e}")
-
-
-# ============================
-# Ejecutar ambos flujos en paralelo
-# ============================
-if __name__ == "__main__":
-    # Cargar configuración de la base de datos
-    with open("db_credentials.json") as f:
-        db_config = json.load(f)
-
-    # Crear hilos para ejecutar Producer y Consumer en paralelo
-    producer_thread = threading.Thread(
-        target=producer_flow,
-        args=(5, "BTCUSDT", "market_data", db_config, "market_data")
-    )
-    consumer_thread = threading.Thread(
-        target=consumer_flow,
-        args=("market_data", db_config, "consumer_data")
-    )
-
-    # Iniciar los hilos
-    producer_thread.start()
-    consumer_thread.start()
-
-    # Esperar a que ambos hilos terminen
-    producer_thread.join()
-    consumer_thread.join()
