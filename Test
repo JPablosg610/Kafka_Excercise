@@ -1,114 +1,25 @@
-from sklearn.linear_model import LinearRegression
-import pandas as pd
-import numpy as np
-
-def ml_model(data):
+def register_ml_results(result, engine, table_name="ml_results"):
     """
-    Modelo de regresión lineal para predecir el precio de cierre.
-    
-    Args:
-        data (DataFrame): Un DataFrame con las columnas necesarias para entrenar el modelo.
-
-    Returns:
-        dict: Contiene el precio real, el precio predicho y el error.
-    """
-    # Verificar si las columnas necesarias están en el DataFrame
-    required_columns = ['open', 'high', 'low', 'volume', 'sma', 'ema', 'close']
-    for col in required_columns:
-        if col not in data.columns:
-            raise ValueError(f"Falta la columna requerida: {col}")
-
-    # Dividir los datos en características (X) y objetivo (y)
-    X = data[['open', 'high', 'low', 'volume', 'sma', 'ema']].values
-    y = data['close'].values
-
-    # Entrenar el modelo con datos históricos (todas las filas excepto la última)
-    model = LinearRegression()
-    model.fit(X[:-1], y[:-1])
-
-    # Predecir el precio de cierre para la última fila
-    predicted_close = model.predict([X[-1]])
-    actual_close = y[-1]
-    error = abs(actual_close - predicted_close[0])
-
-    # Resultado
-    result = {
-        "actual_close": actual_close,
-        "predicted_close": predicted_close[0],
-        "error": error
-    }
-    print(f"Modelo de ML: {result}")
-    return result
-
-
-
-
-
-from project_functions import ml_model
-
-def consumer_flow(topic="market_data", db_config=None, table_name="consumer_data"):
-    """
-    Flujo para recibir datos desde el tópico Kafka, almacenarlos en la base de datos y aplicar el modelo ML.
+    Registra los resultados del modelo de Machine Learning en una tabla de la base de datos.
     """
     try:
-        engine = db_engine(credentials_path="db_credentials.json")
-        kafka_consumer = consumer(topic=topic)
-        
-        for message in kafka_consumer:
-            print(f"Mensaje recibido del tópico '{topic}': {message.value}")
-            handled_data = handling_message(message)
-
-            if handled_data is not None:
-                db_materialization(table_name, engine, handled_data)
-                
-                # Aplicar el modelo de ML
-                ml_result = ml_model(handled_data)
-                print(f"Resultado del modelo de ML: {ml_result}")
-    except KeyboardInterrupt:
-        print("\nConsumidor detenido manualmente.")
+        result_df = pd.DataFrame([result])  # Convertir resultado a DataFrame
+        result_df.to_sql(table_name, con=engine, if_exists="append", index=False)
+        print(f"Resultado del modelo registrado en la tabla '{table_name}': {result}")
     except Exception as e:
-        print(f"Error en el flujo del consumidor: {e}")
+        print(f"Error al registrar el resultado del modelo: {e}")
 
 
-
-
-
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-
-def real_time_plot(data):
-    """
-    Visualización en tiempo real de los precios de cierre y los indicadores.
-    
-    Args:
-        data (DataFrame): Un DataFrame con las columnas necesarias para la gráfica.
-    """
-    fig, ax = plt.subplots()
-    
-    def update(frame):
-        ax.clear()
-        ax.plot(data['timestamp'], data['close'], label='Close Price', color='blue')
-        ax.plot(data['timestamp'], data['sma'], label='SMA', color='orange')
-        ax.plot(data['timestamp'], data['ema'], label='EMA', color='green')
-        ax.set_title("Precios en tiempo real")
-        ax.set_xlabel("Timestamp")
-        ax.set_ylabel("Precio")
-        ax.legend()
-
-    ani = FuncAnimation(fig, update, interval=1000)  # Actualiza cada 1 segundo
-    plt.show()
-
-
-
-
-
-from project_functions import real_time_plot
+from project_functions import ml_model, register_ml_results
 
 def consumer_flow(topic="market_data", db_config=None, table_name="consumer_data"):
+    """
+    Flujo para recibir datos, aplicar el modelo ML y generar visualizaciones.
+    """
     try:
         engine = db_engine(credentials_path="db_credentials.json")
         kafka_consumer = consumer(topic=topic)
-        data = pd.DataFrame()  # DataFrame vacío para acumular datos
+        data = pd.DataFrame()  # DataFrame para acumular datos
 
         for message in kafka_consumer:
             print(f"Mensaje recibido del tópico '{topic}': {message.value}")
@@ -118,10 +29,91 @@ def consumer_flow(topic="market_data", db_config=None, table_name="consumer_data
                 db_materialization(table_name, engine, handled_data)
                 data = pd.concat([data, handled_data], ignore_index=True)
 
-                # Mostrar la gráfica en tiempo real
-                real_time_plot(data)
+                if data.shape[0] > 1:  # Asegurarse de que hay suficientes datos
+                    ml_result = ml_model(data)
+                    register_ml_results(ml_result, engine, table_name="ml_results")
     except KeyboardInterrupt:
         print("\nConsumidor detenido manualmente.")
     except Exception as e:
         print(f"Error en el flujo del consumidor: {e}")
 
+
+
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+def real_time_plot(data):
+    """
+    Visualización en tiempo real de precios e indicadores.
+    
+    Args:
+        data (DataFrame): Un DataFrame con las columnas 'timestamp', 'close', 'sma', y 'ema'.
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+    plt.style.use("seaborn")
+
+    def update(frame):
+        ax.clear()
+        ax.plot(data['timestamp'], data['close'], label='Close Price', color='blue', marker="o")
+        ax.plot(data['timestamp'], data['sma'], label='SMA', color='orange')
+        ax.plot(data['timestamp'], data['ema'], label='EMA', color='green')
+        ax.set_title("Precios en tiempo real", fontsize=16)
+        ax.set_xlabel("Timestamp")
+        ax.set_ylabel("Precio")
+        ax.legend()
+        plt.xticks(rotation=45)
+
+    ani = FuncAnimation(fig, update, interval=1000)  # Actualiza cada 1 segundo
+    plt.show()
+
+
+
+from project_functions import real_time_plot
+
+def consumer_flow(topic="market_data", db_config=None, table_name="consumer_data"):
+    """
+    Flujo para recibir datos, aplicar el modelo ML y generar visualizaciones.
+    """
+    try:
+        engine = db_engine(credentials_path="db_credentials.json")
+        kafka_consumer = consumer(topic=topic)
+        data = pd.DataFrame()  # DataFrame para acumular datos
+
+        for message in kafka_consumer:
+            print(f"Mensaje recibido del tópico '{topic}': {message.value}")
+            handled_data = handling_message(message)
+
+            if handled_data is not None:
+                db_materialization(table_name, engine, handled_data)
+                data = pd.concat([data, handled_data], ignore_index=True)
+
+                if data.shape[0] > 1:  # Asegurarse de que hay suficientes datos
+                    ml_result = ml_model(data)
+                    print(f"Resultado del modelo: {ml_result}")
+
+                # Mostrar gráfica si hay al menos 10 datos
+                if data.shape[0] >= 10:
+                    real_time_plot(data)
+    except KeyboardInterrupt:
+        print("\nConsumidor detenido manualmente.")
+    except Exception as e:
+        print(f"Error en el flujo del consumidor: {e}")
+
+
+
+
+if __name__ == "__main__":
+    producer_thread = threading.Thread(
+        target=producer_flow,
+        args=(5, "BTCUSDT", "market_data", db_config, "market_data")
+    )
+    consumer_thread = threading.Thread(
+        target=consumer_flow,
+        args=("market_data", db_config, "consumer_data")
+    )
+
+    producer_thread.start()
+    consumer_thread.start()
+
+    producer_thread.join()
+    consumer_thread.join()
