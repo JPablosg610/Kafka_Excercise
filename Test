@@ -1,51 +1,36 @@
-import pandas as pd
-
-def clean_market_data(data):
+def processing_market_data(symbol="BTCUSDT", interval="1m"):
     """
-    Limpia y transforma los datos de mercado obtenidos desde la API.
+    Procesa los datos de mercado:
+    - Obtiene los datos desde la API.
+    - Limpia los datos utilizando clean_market_data.
+    - Devuelve los datos listos para su uso.
 
     Args:
-        data (dict): Datos de mercado obtenidos desde la API.
+        symbol (str): Símbolo del par de mercado (e.g., BTCUSDT).
+        interval (str): Intervalo de tiempo para los datos (e.g., 1m, 5m, 1h).
 
     Returns:
-        pd.DataFrame: Datos limpios como un DataFrame de Pandas.
+        pd.DataFrame: Datos procesados y limpios como DataFrame.
     """
     try:
-        # Convertir los datos en un DataFrame
-        df = pd.DataFrame([data])
+        # Obtener datos de la API
+        raw_data = get_market_data(symbol=symbol, interval=interval)
+        if not raw_data:
+            raise ValueError("No se pudieron obtener datos de la API.")
 
-        # Verificar que todas las columnas importantes están presentes
-        required_columns = ["symbol", "open", "high", "low", "close", "volume", "timestamp"]
-        for col in required_columns:
-            if col not in df.columns:
-                raise ValueError(f"Falta la columna requerida: {col}")
+        # Limpiar los datos
+        processed_data = clean_market_data(raw_data)
+        if processed_data is None:
+            raise ValueError("Error al limpiar los datos.")
 
-        # Convertir el timestamp a formato de fecha y hora
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
-
-        # Validar que los valores numéricos no sean nulos o negativos
-        numeric_columns = ["open", "high", "low", "close", "volume"]
-        for col in numeric_columns:
-            if (df[col] <= 0).any():
-                raise ValueError(f"Los valores de '{col}' no pueden ser negativos o cero.")
-
-        print(f"Datos limpios:\n{df}")
-        return df
+        print("Datos procesados correctamente.")
+        return processed_data
 
     except Exception as e:
-        print(f"Error al limpiar los datos: {e}")
+        print(f"Error al procesar los datos de mercado: {e}")
         return None
 
 # Prueba de la función
-raw_data = {
-    "symbol": "BTCUSDT",
-    "open": 27345.67,
-    "high": 27378.9,
-    "low": 27340.1,
-    "close": 27350.55,
-    "volume": 1234.5678,
-    "timestamp": 1679445782.0
-}
-
-cleaned_data = clean_market_data(raw_data)
-
+processed_data = processing_market_data()
+if processed_data is not None:
+    print(processed_data)
