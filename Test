@@ -1,52 +1,51 @@
-import requests
-import time
+import pandas as pd
 
-def get_market_data(symbol="BTCUSDT", interval="1m"):
+def clean_market_data(data):
     """
-    Obtiene datos de mercado reales desde la API de Binance.
+    Limpia y transforma los datos de mercado obtenidos desde la API.
 
     Args:
-        symbol (str): Símbolo del par de mercado (e.g., BTCUSDT).
-        interval (str): Intervalo de tiempo para los datos (e.g., 1m, 5m, 1h).
+        data (dict): Datos de mercado obtenidos desde la API.
 
     Returns:
-        dict: Datos de mercado reales.
+        pd.DataFrame: Datos limpios como un DataFrame de Pandas.
     """
-    url = f"https://api.binance.com/api/v3/klines"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": 1  # Solo queremos el último dato
-    }
-
     try:
-        # Realizar la solicitud a la API
-        response = requests.get(url, params=params)
-        response.raise_for_status()  # Lanza una excepción para códigos de estado no exitosos
+        # Convertir los datos en un DataFrame
+        df = pd.DataFrame([data])
 
-        # Procesar los datos de la respuesta
-        kline = response.json()[0]  # Tomar el último registro
-        market_data = {
-            "symbol": symbol,
-            "open": float(kline[1]),
-            "high": float(kline[2]),
-            "low": float(kline[3]),
-            "close": float(kline[4]),
-            "volume": float(kline[5]),
-            "timestamp": int(kline[6]) / 1000  # Convertir de milisegundos a segundos
-        }
+        # Verificar que todas las columnas importantes están presentes
+        required_columns = ["symbol", "open", "high", "low", "close", "volume", "timestamp"]
+        for col in required_columns:
+            if col not in df.columns:
+                raise ValueError(f"Falta la columna requerida: {col}")
 
-        return market_data
+        # Convertir el timestamp a formato de fecha y hora
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
 
-    except requests.exceptions.RequestException as e:
-        print(f"Error al obtener datos de la API: {e}")
+        # Validar que los valores numéricos no sean nulos o negativos
+        numeric_columns = ["open", "high", "low", "close", "volume"]
+        for col in numeric_columns:
+            if (df[col] <= 0).any():
+                raise ValueError(f"Los valores de '{col}' no pueden ser negativos o cero.")
+
+        print(f"Datos limpios:\n{df}")
+        return df
+
+    except Exception as e:
+        print(f"Error al limpiar los datos: {e}")
         return None
 
 # Prueba de la función
-market_data = get_market_data()
-if market_data:
-    print("Datos de mercado reales obtenidos:")
-    print(market_data)
-else:
-    print("No se pudieron obtener datos de la API.")
+raw_data = {
+    "symbol": "BTCUSDT",
+    "open": 27345.67,
+    "high": 27378.9,
+    "low": 27340.1,
+    "close": 27350.55,
+    "volume": 1234.5678,
+    "timestamp": 1679445782.0
+}
+
+cleaned_data = clean_market_data(raw_data)
 
