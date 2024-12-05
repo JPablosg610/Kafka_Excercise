@@ -1,0 +1,53 @@
+import pandas as pd
+from sqlalchemy import create_engine
+
+# Ejemplo de configuración de la base de datos
+user = "postgres"
+password = "tu_contraseña"
+host = "localhost"
+db = "crypto_db"
+table_name = "market_data"
+
+# Crear el motor de conexión a la base de datos
+engine = create_engine(f"postgresql://{user}:{password}@{host}/{db}")
+
+# DataFrame de prueba (simulando un mensaje procesado)
+data = {
+    "key": ["BTCUSDT"],
+    "price": [50000.25],
+    "volume": [1.2345],
+    "timestamp": [pd.Timestamp.now()]
+}
+df = pd.DataFrame(data)
+
+# Prueba de almacenamiento en la base de datos
+try:
+    # Guardar el DataFrame en la tabla especificada
+    df.to_sql(table_name, con=engine, if_exists="append", index=False)
+    print(f"Datos guardados exitosamente en la tabla '{table_name}'.")
+except Exception as e:
+    print(f"Error al guardar los datos: {e}")
+
+
+
+
+def db_materialization(table_name, engine, json_df):
+    """
+    Almacena los datos procesados en la base de datos.
+
+    Args:
+        table_name (str): Nombre de la tabla en la base de datos.
+        engine: Objeto de conexión SQLAlchemy.
+        json_df (pd.DataFrame): DataFrame con los datos procesados.
+
+    Returns:
+        bool: True si se guardaron los datos correctamente, False si hubo un error.
+    """
+    try:
+        # Guardar los datos en la tabla
+        json_df.to_sql(table_name, con=engine, if_exists="append", index=False)
+        print(f"Datos guardados exitosamente en la tabla '{table_name}'.")
+        return True
+    except Exception as e:
+        print(f"Error al guardar los datos en la tabla '{table_name}': {e}")
+        return False
