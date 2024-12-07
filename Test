@@ -1,25 +1,43 @@
 def clean_market_data(data):
-    
+    """
+    Limpia y valida los datos del mercado.
+
+    Args:
+        data (dict): Diccionario con datos del mercado.
+
+    Returns:
+        pd.DataFrame: DataFrame limpio y validado.
+        None: Si ocurre un error en la limpieza o validación.
+    """
     try:
+        # Convertir los datos a un DataFrame
         df = pd.DataFrame([data])
 
-        # Verificar que las columnas necesarias están presentes
-        required_columns = ["symbol", "open", "high", "low", "close", "volume", "timestamp"]
-        for col in required_columns:
-            if col not in df.columns:
-                raise ValueError(f"Falta la columna requerida: {col}")
+        # Verificar columnas requeridas
+        required_columns = {"symbol", "open", "high", "low", "close", "volume", "timestamp"}
+        missing_columns = required_columns - set(df.columns)
+        if missing_columns:
+            raise ValueError(f"Faltan las columnas requeridas: {', '.join(missing_columns)}")
 
         # Convertir timestamp a formato legible
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
 
-        # Validar que los valores numéricos no sean nulos o negativos
+        # Validar valores numéricos
         numeric_columns = ["open", "high", "low", "close", "volume"]
-        for col in numeric_columns:
-            if (df[col] <= 0).any():
-                raise ValueError(f"Los valores de '{col}' no pueden ser negativos o cero.")
+        invalid_values = df[numeric_columns].apply(lambda x: (x <= 0).any(), axis=0)
+        if invalid_values.any():
+            raise ValueError(f"Las columnas con valores inválidos: {', '.join(invalid_values[invalid_values].index)}")
+
+        # Opcional: Rellenar datos faltantes con valores predeterminados
+        df = df.fillna({
+            "volume": 0  # Por ejemplo, rellenar volumen faltante con 0
+        })
 
         return df
 
+    except ValueError as ve:
+        print(f"Error de validación: {ve}")
+        return None
     except Exception as e:
-        print(f"Error al limpiar los datos: {e}")
+        print(f"Error inesperado al limpiar los datos: {e}")
         return None
