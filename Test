@@ -1,43 +1,16 @@
-def clean_market_data(data):
-    """
-    Limpia y valida los datos del mercado.
+def processing_market_data(symbol="BTCUSDT", interval="1m"):
 
-    Args:
-        data (dict): Diccionario con datos del mercado.
-
-    Returns:
-        pd.DataFrame: DataFrame limpio y validado.
-        None: Si ocurre un error en la limpieza o validación.
-    """
     try:
-        # Convertir los datos a un DataFrame
-        df = pd.DataFrame([data])
+        raw_data = get_market_data(symbol=symbol, interval=interval)
+        if not raw_data:
+            raise ValueError("No se pudieron obtener datos de la API.")
 
-        # Verificar columnas requeridas
-        required_columns = {"symbol", "open", "high", "low", "close", "volume", "timestamp"}
-        missing_columns = required_columns - set(df.columns)
-        if missing_columns:
-            raise ValueError(f"Faltan las columnas requeridas: {', '.join(missing_columns)}")
+        processed_data = clean_market_data(raw_data)
+        if processed_data is None:
+            raise ValueError("Error al limpiar los datos.")
 
-        # Convertir timestamp a formato legible
-        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
-
-        # Validar valores numéricos
-        numeric_columns = ["open", "high", "low", "close", "volume"]
-        invalid_values = df[numeric_columns].apply(lambda x: (x <= 0).any(), axis=0)
-        if invalid_values.any():
-            raise ValueError(f"Las columnas con valores inválidos: {', '.join(invalid_values[invalid_values].index)}")
-
-        # Opcional: Rellenar datos faltantes con valores predeterminados
-        df = df.fillna({
-            "volume": 0  # Por ejemplo, rellenar volumen faltante con 0
-        })
-
-        return df
-
-    except ValueError as ve:
-        print(f"Error de validación: {ve}")
-        return None
+        return processed_data
+    
     except Exception as e:
-        print(f"Error inesperado al limpiar los datos: {e}")
+        print(f"Error al procesar los datos de mercado: {e}")
         return None
