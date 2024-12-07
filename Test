@@ -1,44 +1,25 @@
-def create_producer(bootstrap_servers="localhost:9092"):
+def clean_market_data(data):
     
     try:
-        producer = KafkaProducer(
-            bootstrap_servers=bootstrap_servers,
-            value_serializer=lambda v: dumps(v).encode('utf-8')  # Serializar mensajes a JSON
-        )
-        print(f"Conexión exitosa al servidor Kafka: {bootstrap_servers}")
-        return producer
+        df = pd.DataFrame([data])
+
+        # Verificar que las columnas necesarias están presentes
+        required_columns = ["symbol", "open", "high", "low", "close", "volume", "timestamp"]
+        for col in required_columns:
+            if col not in df.columns:
+                raise ValueError(f"Falta la columna requerida: {col}")
+
+        # Convertir timestamp a formato legible
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+
+        # Validar que los valores numéricos no sean nulos o negativos
+        numeric_columns = ["open", "high", "low", "close", "volume"]
+        for col in numeric_columns:
+            if (df[col] <= 0).any():
+                raise ValueError(f"Los valores de '{col}' no pueden ser negativos o cero.")
+
+        return df
 
     except Exception as e:
-        print(f"Error al crear el productor Kafka: {e}")
+        print(f"Error al limpiar los datos: {e}")
         return None
-
-def get_market_data(symbol="BTCUSDT", interval="1m"):
-
-    url = f"https://api.binance.com/api/v3/klines"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": 1  # Solo queremos el último dato
-    }
-
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-
-        kline = response.json()[0]
-        market_data = {
-            "symbol": symbol,
-            "open": float(kline[1]),
-            "high": float(kline[2]),
-            "low": float(kline[3]),
-            "close": float(kline[4]),
-            "volume": float(kline[5]),
-            "timestamp": int(kline[6]) / 1000  # Convertir de milisegundos a segundos
-        }
-
-        return market_data
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error al obtener datos de la API: {e}")
-        return None
-
