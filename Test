@@ -1,16 +1,32 @@
 def processing_market_data(symbol="BTCUSDT", interval="1m"):
-
+    """
+    Procesa datos de mercado obtenidos de una API.
+    
+    Args:
+        symbol (str): Símbolo del mercado (por ejemplo, "BTCUSDT").
+        interval (str): Intervalo de los datos (por ejemplo, "1m", "5m").
+    
+    Returns:
+        pd.DataFrame: Datos de mercado procesados y limpios.
+        None: Si ocurre un error durante el procesamiento.
+    """
     try:
+        # Obtener datos brutos del mercado
         raw_data = get_market_data(symbol=symbol, interval=interval)
         if not raw_data:
-            raise ValueError("No se pudieron obtener datos de la API.")
+            raise ValueError(f"No se pudieron obtener datos de la API para el símbolo '{symbol}' con intervalo '{interval}'.")
 
+        # Limpiar y procesar los datos
         processed_data = clean_market_data(raw_data)
         if processed_data is None:
-            raise ValueError("Error al limpiar los datos.")
+            raise ValueError(f"Error al limpiar los datos obtenidos para el símbolo '{symbol}'.")
 
+        print(f"Datos procesados correctamente para '{symbol}' con intervalo '{interval}'.")
         return processed_data
-    
+
+    except ValueError as ve:
+        print(f"Error de validación: {ve}")
+        return None
     except Exception as e:
-        print(f"Error al procesar los datos de mercado: {e}")
+        print(f"Error inesperado al procesar los datos de mercado: {e}")
         return None
