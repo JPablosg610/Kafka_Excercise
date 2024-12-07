@@ -1,119 +1,46 @@
-def register_ml_results(result, engine, table_name="ml_results"):
+def db_materialization(table_name, engine, json_df):
     """
-    Registra los resultados del modelo de Machine Learning en una tabla de la base de datos.
-    """
-    try:
-        result_df = pd.DataFrame([result])  # Convertir resultado a DataFrame
-        result_df.to_sql(table_name, con=engine, if_exists="append", index=False)
-        print(f"Resultado del modelo registrado en la tabla '{table_name}': {result}")
-    except Exception as e:
-        print(f"Error al registrar el resultado del modelo: {e}")
-
-
-from project_functions import ml_model, register_ml_results
-
-def consumer_flow(topic="market_data", db_config=None, table_name="consumer_data"):
-    """
-    Flujo para recibir datos, aplicar el modelo ML y generar visualizaciones.
+    Materializa un DataFrame en una tabla de PostgreSQL, manejando duplicados y errores.
     """
     try:
-        engine = db_engine(credentials_path="db_credentials.json")
-        kafka_consumer = consumer(topic=topic)
-        data = pd.DataFrame()  # DataFrame para acumular datos
+        # Verificar si las columnas del DataFrame coinciden con las de la tabla
+        with engine.connect() as conn:
+            table_columns = conn.execute(f"""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = '{table_name}'
+            """).fetchall()
+            table_columns = [col[0] for col in table_columns]
 
-        for message in kafka_consumer:
-            print(f"Mensaje recibido del tópico '{topic}': {message.value}")
-            handled_data = handling_message(message)
+        # Validar columnas del DataFrame
+        missing_columns = set(json_df.columns) - set(table_columns)
+        if missing_columns:
+            raise ValueError(f"Las siguientes columnas están ausentes en la tabla '{table_name}': {missing_columns}")
 
-            if handled_data is not None:
-                db_materialization(table_name, engine, handled_data)
-                data = pd.concat([data, handled_data], ignore_index=True)
+        # Evitar duplicados basados en la columna 'timestamp'
+        if "timestamp" in json_df.columns:
+            with engine.connect() as conn:
+                existing_timestamps = conn.execute(f"""
+                    SELECT DISTINCT timestamp FROM {table_name};
+                """).fetchall()
+                existing_timestamps = {row[0] for row in existing_timestamps}
+            
+            # Filtrar filas que ya existen
+            json_df = json_df[~json_df["timestamp"].isin(existing_timestamps)]
 
-                if data.shape[0] > 1:  # Asegurarse de que hay suficientes datos
-                    ml_result = ml_model(data)
-                    register_ml_results(ml_result, engine, table_name="ml_results")
-    except KeyboardInterrupt:
-        print("\nConsumidor detenido manualmente.")
+        # Insertar datos si hay filas nuevas
+        if not json_df.empty:
+            json_df.to_sql(table_name, con=engine, if_exists="append", index=False)
+            print(f"Datos guardados exitosamente en la tabla '{table_name}'.")
+        else:
+            print(f"No hay datos nuevos para insertar en la tabla '{table_name}'.")
+
+        return True
+
+    except ValueError as ve:
+        print(f"Error de validación: {ve}")
+        return False
     except Exception as e:
-        print(f"Error en el flujo del consumidor: {e}")
+        print(f"Error al guardar los datos en la tabla '{table_name}': {e}")
+        return False
 
-
-
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-
-def real_time_plot(data):
-    """
-    Visualización en tiempo real de precios e indicadores.
-    
-    Args:
-        data (DataFrame): Un DataFrame con las columnas 'timestamp', 'close', 'sma', y 'ema'.
-    """
-    fig, ax = plt.subplots(figsize=(10, 6))
-    plt.style.use("seaborn")
-
-    def update(frame):
-        ax.clear()
-        ax.plot(data['timestamp'], data['close'], label='Close Price', color='blue', marker="o")
-        ax.plot(data['timestamp'], data['sma'], label='SMA', color='orange')
-        ax.plot(data['timestamp'], data['ema'], label='EMA', color='green')
-        ax.set_title("Precios en tiempo real", fontsize=16)
-        ax.set_xlabel("Timestamp")
-        ax.set_ylabel("Precio")
-        ax.legend()
-        plt.xticks(rotation=45)
-
-    ani = FuncAnimation(fig, update, interval=1000)  # Actualiza cada 1 segundo
-    plt.show()
-
-
-
-from project_functions import real_time_plot
-
-def consumer_flow(topic="market_data", db_config=None, table_name="consumer_data"):
-    """
-    Flujo para recibir datos, aplicar el modelo ML y generar visualizaciones.
-    """
-    try:
-        engine = db_engine(credentials_path="db_credentials.json")
-        kafka_consumer = consumer(topic=topic)
-        data = pd.DataFrame()  # DataFrame para acumular datos
-
-        for message in kafka_consumer:
-            print(f"Mensaje recibido del tópico '{topic}': {message.value}")
-            handled_data = handling_message(message)
-
-            if handled_data is not None:
-                db_materialization(table_name, engine, handled_data)
-                data = pd.concat([data, handled_data], ignore_index=True)
-
-                if data.shape[0] > 1:  # Asegurarse de que hay suficientes datos
-                    ml_result = ml_model(data)
-                    print(f"Resultado del modelo: {ml_result}")
-
-                # Mostrar gráfica si hay al menos 10 datos
-                if data.shape[0] >= 10:
-                    real_time_plot(data)
-    except KeyboardInterrupt:
-        print("\nConsumidor detenido manualmente.")
-    except Exception as e:
-        print(f"Error en el flujo del consumidor: {e}")
-
-
-
-
-if __name__ == "__main__":
-    producer_thread = threading.Thread(
-        target=producer_flow,
-        args=(5, "BTCUSDT", "market_data", db_config, "market_data")
-    )
-    consumer_thread = threading.Thread(
-        target=consumer_flow,
-        args=("market_data", db_config, "consumer_data")
-    )
-
-    producer_thread.start()
-    consumer_thread.start()
-
-    producer_thread.join()
-    consumer_thread.join()
