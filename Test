@@ -1,46 +1,44 @@
-def db_materialization(table_name, engine, json_df):
-    """
-    Materializa un DataFrame en una tabla de PostgreSQL, manejando duplicados y errores.
-    """
+def create_producer(bootstrap_servers="localhost:9092"):
+    
     try:
-        # Verificar si las columnas del DataFrame coinciden con las de la tabla
-        with engine.connect() as conn:
-            table_columns = conn.execute(f"""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = '{table_name}'
-            """).fetchall()
-            table_columns = [col[0] for col in table_columns]
+        producer = KafkaProducer(
+            bootstrap_servers=bootstrap_servers,
+            value_serializer=lambda v: dumps(v).encode('utf-8')  # Serializar mensajes a JSON
+        )
+        print(f"Conexión exitosa al servidor Kafka: {bootstrap_servers}")
+        return producer
 
-        # Validar columnas del DataFrame
-        missing_columns = set(json_df.columns) - set(table_columns)
-        if missing_columns:
-            raise ValueError(f"Las siguientes columnas están ausentes en la tabla '{table_name}': {missing_columns}")
-
-        # Evitar duplicados basados en la columna 'timestamp'
-        if "timestamp" in json_df.columns:
-            with engine.connect() as conn:
-                existing_timestamps = conn.execute(f"""
-                    SELECT DISTINCT timestamp FROM {table_name};
-                """).fetchall()
-                existing_timestamps = {row[0] for row in existing_timestamps}
-            
-            # Filtrar filas que ya existen
-            json_df = json_df[~json_df["timestamp"].isin(existing_timestamps)]
-
-        # Insertar datos si hay filas nuevas
-        if not json_df.empty:
-            json_df.to_sql(table_name, con=engine, if_exists="append", index=False)
-            print(f"Datos guardados exitosamente en la tabla '{table_name}'.")
-        else:
-            print(f"No hay datos nuevos para insertar en la tabla '{table_name}'.")
-
-        return True
-
-    except ValueError as ve:
-        print(f"Error de validación: {ve}")
-        return False
     except Exception as e:
-        print(f"Error al guardar los datos en la tabla '{table_name}': {e}")
-        return False
+        print(f"Error al crear el productor Kafka: {e}")
+        return None
+
+def get_market_data(symbol="BTCUSDT", interval="1m"):
+
+    url = f"https://api.binance.com/api/v3/klines"
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "limit": 1  # Solo queremos el último dato
+    }
+
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+
+        kline = response.json()[0]
+        market_data = {
+            "symbol": symbol,
+            "open": float(kline[1]),
+            "high": float(kline[2]),
+            "low": float(kline[3]),
+            "close": float(kline[4]),
+            "volume": float(kline[5]),
+            "timestamp": int(kline[6]) / 1000  # Convertir de milisegundos a segundos
+        }
+
+        return market_data
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error al obtener datos de la API: {e}")
+        return None
 
