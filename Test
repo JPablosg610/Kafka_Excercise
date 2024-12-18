@@ -1,27 +1,2 @@
-# Evitar archivos de credenciales sensibles
-db_credentials.json
+"Hi, I’m José, a data scientist with a strong foundation in data analysis and mathematics, recently graduated from ITESM. During my internship at Oracle, I worked on real-world projects that enhanced my skills in Python, SQL, and Azure. What sets me apart is my ability to transform complex datasets into actionable insights while learning cutting-edge technologies like Kafka and Power BI. I’m excited about leveraging my skills to drive data-driven decision-making in dynamic teams. Could we discuss how I can contribute to your organization’s goals?"
 
-# Archivos de configuración de entornos virtuales
-venv/
-.env
-__pycache__/
-
-# Archivos de logs
-*.log
-
-# Archivos específicos de Jupyter Notebooks
-.ipynb_checkpoints/
-
-# Archivos específicos del sistema operativo
-.DS_Store
-Thumbs.db
-
-# Excluir dependencias descargadas por pip
-*.egg-info/
-*.pyc
-*.pyo
-*.pyd
-
-# Excluir configuraciones de IDEs
-.vscode/
-.idea/
