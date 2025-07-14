@@ -1,5 +1,137 @@
-Informatica PowerCenter is an ETL (Extract, Transform, Load) tool widely used for data integration. It allows organizations to extract data from multiple heterogeneous sources, transform the data according to business logic, and load it into target systems like data warehouses, databases, or flat files.
-It is critical for organizations looking to consolidate data for reporting, analytics, and business intelligence. Its reliability, scalability, and ability to work with large, complex datasets make it a leading ETL tool in the market.
+import streamlit as st
+import pandas as pd
+import numpy as np
+from sklearn import datasets
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
+import matplotlib.pyplot as plt
+
+# =========================
+# Login simple
+# =========================
+USERS = {
+    "admin": "1234",
+    "user": "abcd"
+}
+
+def login(username, password):
+    return username in USERS and USERS[username] == password
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    st.title("🔐 Inicio de sesión")
+    username = st.text_input("Usuario")
+    password = st.text_input("Contraseña", type="password")
+    if st.button("Ingresar"):
+        if login(username, password):
+            st.session_state["authenticated"] = True
+            st.success("¡Acceso concedido!")
+        else:
+            st.error("Usuario o contraseña incorrectos")
+    st.stop()
+
+# =========================
+# Barra lateral
+# =========================
+st.sidebar.title("📂 Navegación")
+page = st.sidebar.radio("Ir a", ["Análisis de datos", "Proyecto ML"])
+
+st.sidebar.markdown("---")
+st.sidebar.info("Demo interactiva 🎈")
+
+# =========================
+# Página: Análisis de datos
+# =========================
+if page == "Análisis de datos":
+    st.title("📊 Análisis interactivo de datos")
+
+    data = {
+        "Nombre": ["Ana", "Luis", "María", "Juan", "Sofía"],
+        "Edad": [25, 30, 22, 28, 35],
+        "Departamento": ["Ventas", "IT", "Marketing", "IT", "Ventas"],
+        "Salario": [50000, 70000, 48000, 65000, 72000]
+    }
+    df = pd.DataFrame(data)
+
+    st.subheader("Tabla general")
+    st.dataframe(df, use_container_width=True)
+
+    st.subheader("🎯 Filtrar por departamento")
+    dept_options = df["Departamento"].unique()
+    selected_dept = st.selectbox("Selecciona departamento", dept_options)
+    filtered_df = df[df["Departamento"] == selected_dept]
+    st.dataframe(filtered_df, use_container_width=True)
+
+    st.subheader("💰 Gráfico de salarios")
+    st.bar_chart(filtered_df.set_index("Nombre")["Salario"])
+
+    st.subheader("📈 Estadísticas descriptivas")
+    st.write(filtered_df.describe())
+
+    csv = filtered_df.to_csv(index=False).encode("utf-8")
+    st.download_button("Descargar CSV", csv, "datos_filtrados.csv", "text/csv")
+
+# =========================
+# Página: Proyecto ML
+# =========================
+else:
+    st.title("🤖 Proyecto básico de ML: Clasificación Iris")
+
+    st.markdown(
+        """
+        En esta demo entrenamos un **árbol de decisión** usando el clásico dataset *Iris* 🌺.
+        """
+    )
+
+    # Cargar dataset
+    iris = datasets.load_iris()
+    X = iris.data
+    y = iris.target
+    feature_names = iris.feature_names
+    target_names = iris.target_names
+
+    # Mostrar dataframe
+    df_iris = pd.DataFrame(X, columns=feature_names)
+    df_iris["target"] = [target_names[i] for i in y]
+
+    with st.expander("🔍 Ver datos completos"):
+        st.dataframe(df_iris, use_container_width=True)
+
+    # Parámetros de modelo
+    st.sidebar.subheader("⚙️ Parámetros del modelo")
+    max_depth = st.sidebar.slider("Máxima profundidad del árbol", 1, 10, 3)
+    test_size = st.sidebar.slider("Proporción de test", 0.1, 0.5, 0.3)
+
+    # Dividir datos
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=42
+    )
+
+    # Entrenar modelo
+    clf = DecisionTreeClassifier(max_depth=max_depth, random_state=42)
+    clf.fit(X_train, y_train)
+
+    # Predicciones
+    y_pred = clf.predict(X_test)
+
+    # Métricas
+    acc = accuracy_score(y_test, y_pred)
+    cm = confusion_matrix(y_test, y_pred)
+
+    st.subheader("✅ Precisión del modelo")
+    st.metric(label="Accuracy", value=f"{acc:.2%}")
+
+    # Mostrar matriz de confusión
+    st.subheader("🗺️ Matriz de confusión")
+    fig, ax = plt.subplots()
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=target_names)
+    disp.plot(ax=ax, cmap='Blues', colorbar=False)
+    st.pyplot(fig)
+
+    st.success("¡Modelo entrenado y visualizado correctamente! 🚀")
 
 
 
