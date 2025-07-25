@@ -1,137 +1,77 @@
-import streamlit as st
-import pandas as pd
-import numpy as np
-from sklearn import datasets
-from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix, ConfusionMatrixDisplay
-import matplotlib.pyplot as plt
+WITH base AS (
+  SELECT
+    *,
+    
+    -- Paso 1 y 2: extraer y limpiar TEMP_HYPH_SUFFIX
+    TRIM(
+      CASE
+        WHEN LENGTH(
+          CASE
+            WHEN POSITION('-' IN ITEM_NUMBER) > 0 THEN
+              SUBSTRING(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - CHARINDEX('-', REVERSE(ITEM_NUMBER)) + 1)
+            ELSE RIGHT(ITEM_NUMBER, 1)
+          END
+        ) IN (0,1) THEN ''
+        ELSE
+          CASE
+            WHEN POSITION('-' IN ITEM_NUMBER) > 0 THEN
+              SUBSTRING(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - CHARINDEX('-', REVERSE(ITEM_NUMBER)) + 1)
+            ELSE RIGHT(ITEM_NUMBER, 1)
+          END
+      END
+    ) AS TEMP_HYPH_SUFFIX
 
-# =========================
-# Login simple
-# =========================
-USERS = {
-    "admin": "1234",
-    "user": "abcd"
-}
+  FROM mi_tabla
+),
 
-def login(username, password):
-    return username in USERS and USERS[username] == password
+con_suffix_limpio AS (
+  SELECT
+    *,
+    
+    -- Paso 3: eliminar guion inicial si existe
+    CASE
+      WHEN LEFT(TEMP_HYPH_SUFFIX, 1) = '-' THEN
+        SUBSTRING(TEMP_HYPH_SUFFIX, 2)
+      ELSE
+        TEMP_HYPH_SUFFIX
+    END AS test
 
-if "authenticated" not in st.session_state:
-    st.session_state["authenticated"] = False
+  FROM base
+),
 
-if not st.session_state["authenticated"]:
-    st.title("🔐 Inicio de sesión")
-    username = st.text_input("Usuario")
-    password = st.text_input("Contraseña", type="password")
-    if st.button("Ingresar"):
-        if login(username, password):
-            st.session_state["authenticated"] = True
-            st.success("¡Acceso concedido!")
-        else:
-            st.error("Usuario o contraseña incorrectos")
-    st.stop()
+con_left_of_suffix AS (
+  SELECT
+    *,
+    
+    -- Paso 4: quitar sufijo del campo original o normalizado
+    TRIM(
+      CASE
+        WHEN TEMP_HYPH_SUFFIX != '' AND LEFT(ITEM_NUMBER, 2) = 'P-' THEN
+          LEFT(ITEM_NUMBER_NORMALIZED, LENGTH(ITEM_NUMBER_NORMALIZED) - LENGTH(TEMP_HYPH_SUFFIX))
+        WHEN TEMP_HYPH_SUFFIX != '' THEN
+          LEFT(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - LENGTH(TEMP_HYPH_SUFFIX))
+        ELSE ''
+      END
+    ) AS TEMP_LEFT_OF_SUFFIX
 
-# =========================
-# Barra lateral
-# =========================
-st.sidebar.title("📂 Navegación")
-page = st.sidebar.radio("Ir a", ["Análisis de datos", "Proyecto ML"])
+  FROM con_suffix_limpio
+),
 
-st.sidebar.markdown("---")
-st.sidebar.info("Demo interactiva 🎈")
+final AS (
+  SELECT
+    *,
+    
+    -- Paso 5: quitar guion final si existe
+    CASE
+      WHEN RIGHT(TEMP_LEFT_OF_SUFFIX, 1) = '-' THEN
+        LEFT(TEMP_LEFT_OF_SUFFIX, LENGTH(TEMP_LEFT_OF_SUFFIX) - 1)
+      ELSE
+        TEMP_LEFT_OF_SUFFIX
+    END AS test2
 
-# =========================
-# Página: Análisis de datos
-# =========================
-if page == "Análisis de datos":
-    st.title("📊 Análisis interactivo de datos")
+  FROM con_left_of_suffix
+)
 
-    data = {
-        "Nombre": ["Ana", "Luis", "María", "Juan", "Sofía"],
-        "Edad": [25, 30, 22, 28, 35],
-        "Departamento": ["Ventas", "IT", "Marketing", "IT", "Ventas"],
-        "Salario": [50000, 70000, 48000, 65000, 72000]
-    }
-    df = pd.DataFrame(data)
-
-    st.subheader("Tabla general")
-    st.dataframe(df, use_container_width=True)
-
-    st.subheader("🎯 Filtrar por departamento")
-    dept_options = df["Departamento"].unique()
-    selected_dept = st.selectbox("Selecciona departamento", dept_options)
-    filtered_df = df[df["Departamento"] == selected_dept]
-    st.dataframe(filtered_df, use_container_width=True)
-
-    st.subheader("💰 Gráfico de salarios")
-    st.bar_chart(filtered_df.set_index("Nombre")["Salario"])
-
-    st.subheader("📈 Estadísticas descriptivas")
-    st.write(filtered_df.describe())
-
-    csv = filtered_df.to_csv(index=False).encode("utf-8")
-    st.download_button("Descargar CSV", csv, "datos_filtrados.csv", "text/csv")
-
-# =========================
-# Página: Proyecto ML
-# =========================
-else:
-    st.title("🤖 Proyecto básico de ML: Clasificación Iris")
-
-    st.markdown(
-        """
-        En esta demo entrenamos un **árbol de decisión** usando el clásico dataset *Iris* 🌺.
-        """
-    )
-
-    # Cargar dataset
-    iris = datasets.load_iris()
-    X = iris.data
-    y = iris.target
-    feature_names = iris.feature_names
-    target_names = iris.target_names
-
-    # Mostrar dataframe
-    df_iris = pd.DataFrame(X, columns=feature_names)
-    df_iris["target"] = [target_names[i] for i in y]
-
-    with st.expander("🔍 Ver datos completos"):
-        st.dataframe(df_iris, use_container_width=True)
-
-    # Parámetros de modelo
-    st.sidebar.subheader("⚙️ Parámetros del modelo")
-    max_depth = st.sidebar.slider("Máxima profundidad del árbol", 1, 10, 3)
-    test_size = st.sidebar.slider("Proporción de test", 0.1, 0.5, 0.3)
-
-    # Dividir datos
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42
-    )
-
-    # Entrenar modelo
-    clf = DecisionTreeClassifier(max_depth=max_depth, random_state=42)
-    clf.fit(X_train, y_train)
-
-    # Predicciones
-    y_pred = clf.predict(X_test)
-
-    # Métricas
-    acc = accuracy_score(y_test, y_pred)
-    cm = confusion_matrix(y_test, y_pred)
-
-    st.subheader("✅ Precisión del modelo")
-    st.metric(label="Accuracy", value=f"{acc:.2%}")
-
-    # Mostrar matriz de confusión
-    st.subheader("🗺️ Matriz de confusión")
-    fig, ax = plt.subplots()
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=target_names)
-    disp.plot(ax=ax, cmap='Blues', colorbar=False)
-    st.pyplot(fig)
-
-    st.success("¡Modelo entrenado y visualizado correctamente! 🚀")
-
-
-
+SELECT *
+FROM final
+LIMIT 1000;
