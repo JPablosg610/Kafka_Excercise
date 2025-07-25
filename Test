@@ -1,75 +1,42 @@
 WITH base AS (
-  SELECT
-    *,
-    
-    -- Paso 1 y 2: extraer y limpiar TEMP_HYPH_SUFFIX
-    TRIM(
-      CASE
-        WHEN LENGTH(
-          CASE
-            WHEN POSITION('-' IN ITEM_NUMBER) > 0 THEN
-              SUBSTRING(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - CHARINDEX('-', REVERSE(ITEM_NUMBER)) + 1)
-            ELSE RIGHT(ITEM_NUMBER, 1)
-          END
-        ) IN (0,1) THEN ''
-        ELSE
-          CASE
-            WHEN POSITION('-' IN ITEM_NUMBER) > 0 THEN
-              SUBSTRING(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - CHARINDEX('-', REVERSE(ITEM_NUMBER)) + 1)
-            ELSE RIGHT(ITEM_NUMBER, 1)
-          END
-      END
-    ) AS TEMP_HYPH_SUFFIX
+  SELECT *,
+  
+    -- Sufijo crudo: con guion incluido
+    CASE 
+      WHEN POSITION('-' IN ITEM_NUMBER) > 0 THEN 
+        SUBSTRING(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - CHARINDEX('-', REVERSE(ITEM_NUMBER)) + 1)
+      ELSE RIGHT(ITEM_NUMBER, 1)
+    END AS TEMP_HYPH_SUFFIX_RAW
 
   FROM mi_tabla
 ),
 
-con_suffix_limpio AS (
-  SELECT
-    *,
-    
-    -- Paso 3: eliminar guion inicial si existe
+con_suffixes AS (
+  SELECT *,
+  
+    -- Sufijo limpio (sin guion al inicio)
+    CASE 
+      WHEN LEFT(TEMP_HYPH_SUFFIX_RAW, 1) = '-' THEN SUBSTRING(TEMP_HYPH_SUFFIX_RAW, 2)
+      ELSE TEMP_HYPH_SUFFIX_RAW
+    END AS TEMP_HYPH_SUFFIX_CLEAN,
+
+    -- Parte izquierda usando la longitud del sufijo RAW
     CASE
-      WHEN LEFT(TEMP_HYPH_SUFFIX, 1) = '-' THEN
-        SUBSTRING(TEMP_HYPH_SUFFIX, 2)
-      ELSE
-        TEMP_HYPH_SUFFIX
-    END AS test
+      WHEN TEMP_HYPH_SUFFIX_RAW != '' AND LEFT(ITEM_NUMBER, 2) = 'P-' THEN
+        LEFT(ITEM_NUMBER_NORMALIZED, LENGTH(ITEM_NUMBER_NORMALIZED) - LENGTH(TEMP_HYPH_SUFFIX_RAW))
+      WHEN TEMP_HYPH_SUFFIX_RAW != '' THEN
+        LEFT(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - LENGTH(TEMP_HYPH_SUFFIX_RAW))
+      ELSE ''
+    END AS TEMP_LEFT_OF_SUFFIX
 
   FROM base
 ),
 
-con_left_of_suffix AS (
-  SELECT
-    *,
-    
-    -- Paso 4: quitar sufijo del campo original o normalizado
-    TRIM(
-      CASE
-        WHEN TEMP_HYPH_SUFFIX != '' AND LEFT(ITEM_NUMBER, 2) = 'P-' THEN
-          LEFT(ITEM_NUMBER_NORMALIZED, LENGTH(ITEM_NUMBER_NORMALIZED) - LENGTH(TEMP_HYPH_SUFFIX))
-        WHEN TEMP_HYPH_SUFFIX != '' THEN
-          LEFT(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - LENGTH(TEMP_HYPH_SUFFIX))
-        ELSE ''
-      END
-    ) AS TEMP_LEFT_OF_SUFFIX
-
-  FROM con_suffix_limpio
-),
-
 final AS (
-  SELECT
-    *,
-    
-    -- Paso 5: quitar guion final si existe
-    CASE
-      WHEN RIGHT(TEMP_LEFT_OF_SUFFIX, 1) = '-' THEN
-        LEFT(TEMP_LEFT_OF_SUFFIX, LENGTH(TEMP_LEFT_OF_SUFFIX) - 1)
-      ELSE
-        TEMP_LEFT_OF_SUFFIX
-    END AS test2
-
-  FROM con_left_of_suffix
+  SELECT *,
+    TEMP_HYPH_SUFFIX_CLEAN AS test,      -- Sufijo limpio (sin guion)
+    TEMP_LEFT_OF_SUFFIX AS test2         -- Parte izquierda sin modificar
+  FROM con_suffixes
 )
 
 SELECT *
