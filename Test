@@ -1,44 +1,71 @@
-WITH base AS (
-  SELECT *,
-  
-    -- Sufijo crudo: con guion incluido
-    CASE 
-      WHEN POSITION('-' IN ITEM_NUMBER) > 0 THEN 
-        SUBSTRING(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - CHARINDEX('-', REVERSE(ITEM_NUMBER)) + 1)
-      ELSE RIGHT(ITEM_NUMBER, 1)
-    END AS TEMP_HYPH_SUFFIX_RAW
+import streamlit as st
+import pandas as pd
+import snowflake.connector
+import altair as alt
 
-  FROM mi_tabla
-),
+# Conexión a Snowflake
+@st.cache_resource
+def connect_to_snowflake():
+    return snowflake.connector.connect(
+        user='TU_USUARIO',
+        password='TU_CONTRASEÑA',
+        account='TU_CUENTA',
+        warehouse='TU_WAREHOUSE',
+        database='TU_DATABASE',
+        schema='TU_SCHEMA'
+    )
 
-con_suffixes AS (
-  SELECT *,
-  
-    -- Sufijo limpio (sin guion al inicio)
-    CASE 
-      WHEN LEFT(TEMP_HYPH_SUFFIX_RAW, 1) = '-' THEN SUBSTRING(TEMP_HYPH_SUFFIX_RAW, 2)
-      ELSE TEMP_HYPH_SUFFIX_RAW
-    END AS TEMP_HYPH_SUFFIX_CLEAN,
+# Obtener datos por fecha y tabla
+@st.cache_data
+def get_data_por_tabla():
+    conn = connect_to_snowflake()
+    query = """
+        SELECT fecha, tabla_origen, COUNT(*) AS conteo
+        FROM TU_TABLA
+        GROUP BY fecha, tabla_origen
+        ORDER BY fecha
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
 
-    -- Parte izquierda usando la longitud del sufijo RAW
-    CASE
-      WHEN TEMP_HYPH_SUFFIX_RAW != '' AND LEFT(ITEM_NUMBER, 2) = 'P-' THEN
-        LEFT(ITEM_NUMBER_NORMALIZED, LENGTH(ITEM_NUMBER_NORMALIZED) - LENGTH(TEMP_HYPH_SUFFIX_RAW))
-      WHEN TEMP_HYPH_SUFFIX_RAW != '' THEN
-        LEFT(ITEM_NUMBER, LENGTH(ITEM_NUMBER) - LENGTH(TEMP_HYPH_SUFFIX_RAW))
-      ELSE ''
-    END AS TEMP_LEFT_OF_SUFFIX
+# Obtener datos por fecha y otra dimensión
+@st.cache_data
+def get_data_por_otro_valor():
+    conn = connect_to_snowflake()
+    query = """
+        SELECT fecha, otra_columna, COUNT(*) AS conteo
+        FROM TU_TABLA
+        GROUP BY fecha, otra_columna
+        ORDER BY fecha
+    """
+    df = pd.read_sql(query, conn)
+    conn.close()
+    return df
 
-  FROM base
-),
+# Streamlit app
+st.title("📊 Conteo de registros por día")
 
-final AS (
-  SELECT *,
-    TEMP_HYPH_SUFFIX_CLEAN AS test,      -- Sufijo limpio (sin guion)
-    TEMP_LEFT_OF_SUFFIX AS test2         -- Parte izquierda sin modificar
-  FROM con_suffixes
-)
+# Gráfica 1: por tabla_origen
+df1 = get_data_por_tabla()
+st.subheader("Registros por día por tabla")
+chart1 = alt.Chart(df1).mark_line(point=True).encode(
+    x='fecha:T',
+    y='conteo:Q',
+    color='tabla_origen:N',
+    tooltip=['fecha', 'tabla_origen', 'conteo']
+).properties(width=700, height=400)
 
-SELECT *
-FROM final
-LIMIT 1000;
+st.altair_chart(chart1, use_container_width=True)
+
+# Gráfica 2: por otra_columna
+df2 = get_data_por_otro_valor()
+st.subheader("Registros por día por otro valor")
+chart2 = alt.Chart(df2).mark_line(point=True).encode(
+    x='fecha:T',
+    y='conteo:Q',
+    color='otra_columna:N',
+    tooltip=['fecha', 'otra_columna', 'conteo']
+).properties(width=700, height=400)
+
+st.altair_chart(chart2, use_container_width=True)
